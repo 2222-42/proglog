@@ -25,7 +25,7 @@ func newIndex(f *os.File, c Config) (*index, error) {
 	}
 
 	idx.size = uint64(fi.Size())
-	if err = os.Truncate(f.Name(), int64(c.Segment.MaxIndexBytes)); err != nil {
+	if err = os.Truncate(f.Name(), int64(c.Segment.MaxIndexBytes)); err != nil { // 一度メモリにマップされたファイルはサイズを変更できないので、サイズを変更する
 		return nil, err
 	}
 
@@ -47,7 +47,7 @@ func (i *index) Close() error {
 		return err
 	}
 
-	if err := i.file.Truncate(int64(i.size)); err != nil {
+	if err := i.file.Truncate(int64(i.size)); err != nil { // 最後のエントリとファイルの終わりの間に使われていない領域がないようにするため、切り詰める。
 		return err
 	}
 	return i.file.Close()
