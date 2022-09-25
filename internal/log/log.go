@@ -33,7 +33,7 @@ func NewLog(dir string, c Config) (*Log, error) {
 		Dir:    dir,
 		Config: c,
 	}
-	return l, nil
+	return l, l.setup()
 }
 
 func (l *Log) setup() error {
