@@ -123,6 +123,7 @@ func (l *Log) Read(off uint64) (*api.Record, error) {
 	return s.Read(off)
 }
 
+// Close method closes all segment
 func (l *Log) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -133,6 +134,35 @@ func (l *Log) Close() error {
 		}
 	}
 	return nil
+}
+
+// Remove method closes and removes data
+func (l *Log) Remove() error {
+	if err := l.Close(); err != nil {
+		return err
+	}
+	return os.RemoveAll(l.Dir)
+}
+
+// Reset method remove logs and make new one to replace
+func (l *Log) Reset() error {
+	if err := l.Remove(); err != nil {
+		return err
+	}
+	return l.setup()
+}
+
+// LowestOffset and HighestOffset tell us the range of offset recorded in log.
+func (l *Log) LowestOffset() (uint64, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.segments[0].baseOffset, nil
+}
+
+func (l *Log) HighestOffset() (uint64, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.highestOffset()
 }
 
 func (l *Log) highestOffset() (uint64, error) {
