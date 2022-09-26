@@ -3,6 +3,7 @@ package log
 import (
 	"fmt"
 	api "github.com/2222-42/proglog/api/v1"
+	"io"
 	"os"
 	"path"
 	"sort"
@@ -163,6 +164,48 @@ func (l *Log) HighestOffset() (uint64, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return l.highestOffset()
+}
+
+// Truncate method remove all segments whose nextOffset is lower than lowest.
+func (l *Log) Truncate(lowest uint64) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	var segments []*segment
+	for _, s := range l.segments {
+		if s.nextOffset <= lowest+1 {
+			if err := s.Remove(); err != nil {
+				return err
+			}
+			continue
+		}
+		segments = append(segments, s)
+	}
+	l.segments = segments
+	return nil
+}
+
+//Reader method returns io.Reader to read all the Log.
+// 合意形成の連携を実施し、スナップショットをサポートし、ログの復旧をサポートする必要があるのに、必要。
+func (l *Log) Reader() io.Reader {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	readers := make([]io.Reader, len(l.segments))
+	for i, s := range l.segments {
+		readers[i] = &originReader{s.store, 0}
+	}
+	return io.MultiReader(readers...)
+}
+
+type originReader struct {
+	*store
+	off int64
+}
+
+func (o *originReader) Read(p []byte) (int, error) {
+	n, err := o.ReadAt(p, o.off)
+	o.off += int64(n)
+	return n, err
 }
 
 func (l *Log) highestOffset() (uint64, error) {
