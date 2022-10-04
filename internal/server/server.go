@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	api "github.com/2222-42/proglog/api/v1"
+	"google.golang.org/grpc"
 )
 
 type Config struct {
@@ -85,6 +86,18 @@ func (s *grpcServer) ProduceStream(stream api.Log_ProduceStreamServer) error {
 			return err
 		}
 	}
+}
+
+func NewGRPCServer(config *Config) (*grpc.Server, error) {
+	gsrv := grpc.NewServer()
+
+	srv, err := newgrpcServer(config)
+	if err != nil {
+		return nil, err
+	}
+
+	api.RegisterLogServer(gsrv, srv)
+	return gsrv, nil
 }
 
 type CommitLog interface {
