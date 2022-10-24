@@ -24,5 +24,5 @@ func configFile(fileName string) string {
 		panic(err)
 	}
 
-	return filepath.Join(homeDir, "GolandProjects/proglog", fileName)
+	return filepath.Join(homeDir, ".proglog", fileName)
 }
