@@ -3,12 +3,29 @@ package server
 import (
 	"context"
 	api "github.com/2222-42/proglog/api/v1"
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
 type Config struct {
-	CommitLog CommitLog
+	CommitLog  CommitLog
+	Authorizer Authorizer
 }
+
+type Authorizer interface {
+	Authorize(subject, object, action string) error
+}
+
+const (
+	objectWildCard = "*"
+	produceAction  = "produce"
+	consumeAction  = "consume"
+)
 
 var _ api.LogServer = (*grpcServer)(nil)
 
@@ -26,6 +43,13 @@ func newgrpcServer(config *Config) (srv *grpcServer, err error) {
 }
 
 func (s *grpcServer) Produce(ctx context.Context, req *api.ProduceRequest) (*api.ProduceResponse, error) {
+	if err := s.Authorizer.Authorize(
+		subject(ctx),
+		objectWildCard,
+		produceAction,
+	); err != nil {
+		return nil, err
+	}
 	offset, err := s.CommitLog.Append(req.Record)
 	if err != nil {
 		return nil, err
@@ -34,6 +58,13 @@ func (s *grpcServer) Produce(ctx context.Context, req *api.ProduceRequest) (*api
 }
 
 func (s *grpcServer) Consume(ctx context.Context, req *api.ConsumeRequest) (*api.ConsumeResponse, error) {
+	if err := s.Authorizer.Authorize(
+		subject(ctx),
+		objectWildCard,
+		consumeAction,
+	); err != nil {
+		return nil, err
+	}
 	record, err := s.CommitLog.Read(req.Offset)
 	if err != nil {
 		return nil, err
@@ -90,6 +121,14 @@ func (s *grpcServer) ProduceStream(stream api.Log_ProduceStreamServer) error {
 
 // NewGRPCServer の第二引数は、gRPCのサーバーオプション
 func NewGRPCServer(config *Config, grpcOpts ...grpc.ServerOption) (*grpc.Server, error) {
+	grpcOpts = append(grpcOpts, grpc.StreamInterceptor(
+		grpc_middleware.ChainStreamServer(
+			grpc_auth.StreamServerInterceptor(authenticate),
+		)),
+		grpc.UnaryInterceptor(
+			grpc_middleware.ChainUnaryServer(
+				grpc_auth.UnaryServerInterceptor(authenticate),
+			)))
 	gsrv := grpc.NewServer(grpcOpts...)
 
 	srv, err := newgrpcServer(config)
@@ -105,3 +144,30 @@ type CommitLog interface {
 	Append(record *api.Record) (uint64, error)
 	Read(uint64) (*api.Record, error)
 }
+
+// authenticate is interceptor which read subject from client's cred and write to context of RPC.
+func authenticate(ctx context.Context) (context.Context, error) {
+	p, ok := peer.FromContext(ctx)
+	if !ok {
+		return ctx, status.New(
+			codes.Unknown,
+			"could not find peer info",
+		).Err()
+	}
+
+	if p.AuthInfo == nil {
+		return context.WithValue(ctx, subjectContextKey{}, ""), nil
+	}
+
+	tlsInfo := p.AuthInfo.(credentials.TLSInfo)
+	subject := tlsInfo.State.VerifiedChains[0][0].Subject.CommonName
+	ctx = context.WithValue(ctx, subjectContextKey{}, subject)
+
+	return ctx, nil
+}
+
+func subject(ctx context.Context) string {
+	return ctx.Value(subjectContextKey{}).(string)
+}
+
+type subjectContextKey struct{}

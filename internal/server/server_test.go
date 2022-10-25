@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	api "github.com/2222-42/proglog/api/v1"
+	"github.com/2222-42/proglog/internal/auth"
 	"github.com/2222-42/proglog/internal/config"
 	"github.com/2222-42/proglog/internal/log"
 	"github.com/stretchr/testify/require"
@@ -95,8 +96,10 @@ func setupTest(t *testing.T, fn func(config *Config)) (
 	clog, err := log.NewLog(dir, log.Config{})
 	require.NoError(t, err)
 
+	authorizer := auth.New(config.ACLModelFile, config.ACLPolicyFile)
 	cfg = &Config{
-		CommitLog: clog,
+		CommitLog:  clog,
+		Authorizer: authorizer,
 	}
 	if fn != nil {
 		fn(cfg)
