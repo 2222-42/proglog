@@ -5,11 +5,18 @@ import (
 	api "github.com/2222-42/proglog/api/v1"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
+	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
+	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
+	"go.opencensus.io/plugin/ocgrpc"
+	"go.opencensus.io/stats/view"
+	"go.opencensus.io/trace"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	"time"
 )
 
 type Config struct {
@@ -121,14 +128,47 @@ func (s *grpcServer) ProduceStream(stream api.Log_ProduceStreamServer) error {
 
 // NewGRPCServer の第二引数は、gRPCのサーバーオプション
 func NewGRPCServer(config *Config, grpcOpts ...grpc.ServerOption) (*grpc.Server, error) {
-	grpcOpts = append(grpcOpts, grpc.StreamInterceptor(
-		grpc_middleware.ChainStreamServer(
-			grpc_auth.StreamServerInterceptor(authenticate),
-		)),
+	logger := zap.L().Named("server") // 他のログとサーバのログの区別のための命名
+	zapOpts := []grpc_zap.Option{
+		grpc_zap.WithDurationField(func(duration time.Duration) zap.Field {
+			return zap.Int64(
+				"grpc.time_ns",
+				duration.Nanoseconds(), // 各リクエストの持続時間をナノ秒単位で記録する
+			)
+		}),
+	}
+	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()}) // always do sampling of traces
+	// probability samplerの例
+	//halfSampler := trace.ProbabilitySampler(0.5)
+	//trace.ApplyConfig(
+	//	trace.Config{
+	//		DefaultSampler: func(p trace.SamplingParameters) trace.SamplingDecision {
+	//			if strings.Contains(p.Name, "Produce") {
+	//				return trace.SamplingDecision{Sample: true}
+	//			}
+	//			return halfSampler(p)
+	//		},
+	//	})
+	if err := view.Register(ocgrpc.DefaultServerViews...); err != nil {
+		return nil, err
+	}
+
+	grpcOpts = append(grpcOpts,
+		grpc.StreamInterceptor(
+			grpc_middleware.ChainStreamServer(
+				grpc_auth.StreamServerInterceptor(authenticate),
+				grpc_zap.StreamServerInterceptor(logger, zapOpts...),
+				grpc_auth.StreamServerInterceptor(authenticate),
+			),
+		),
 		grpc.UnaryInterceptor(
 			grpc_middleware.ChainUnaryServer(
+				grpc_ctxtags.UnaryServerInterceptor(),
+				grpc_zap.UnaryServerInterceptor(logger, zapOpts...),
 				grpc_auth.UnaryServerInterceptor(authenticate),
-			)))
+			),
+		),
+	)
 	gsrv := grpc.NewServer(grpcOpts...)
 
 	srv, err := newgrpcServer(config)
