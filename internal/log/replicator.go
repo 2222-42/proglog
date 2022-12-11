@@ -23,6 +23,7 @@ type Replicator struct {
 func (r *Replicator) Join(name, addr string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.init()
 
 	if r.closed {
 		return nil
