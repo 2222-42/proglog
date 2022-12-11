@@ -83,7 +83,7 @@ func (r *Replicator) replicate(addr string, leave chan struct{}) {
 		case <-leave:
 			return
 		case record := <-records:
-			_, err := r.LocalServer.Produce(ctx, &api.ProduceRequest{
+			_, err = r.LocalServer.Produce(ctx, &api.ProduceRequest{
 				Record: record,
 			})
 			if err != nil {

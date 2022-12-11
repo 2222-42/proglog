@@ -46,7 +46,9 @@ func setupMember(t *testing.T, members []*Membership) ([]*Membership, *handler) 
 		h.joins = make(chan map[string]string, 3)
 		h.leaves = make(chan string, 3)
 	} else {
-		c.StartJoinAddrs = []string{members[0].Config.BindAddr}
+		c.StartJoinAddrs = []string{
+			members[0].BindAddr,
+		}
 	}
 	m, err := New(h, c)
 	require.NoError(t, err)

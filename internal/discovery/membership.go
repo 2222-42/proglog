@@ -21,7 +21,7 @@ func New(handler Handler, config Config) (*Membership, error) {
 		logger:  zap.L().Named("membership"),
 	}
 
-	if err := membership.Setup(); err != nil {
+	if err := membership.setupSerf(); err != nil {
 		return nil, err
 	}
 
@@ -35,7 +35,7 @@ type Config struct {
 	StartJoinAddrs []string
 }
 
-func (m *Membership) Setup() error {
+func (m *Membership) setupSerf() error {
 	addr, err := net.ResolveTCPAddr("tcp", m.BindAddr)
 	if err != nil {
 		return err
@@ -47,9 +47,9 @@ func (m *Membership) Setup() error {
 	serfConfig.MemberlistConfig.BindAddr = addr.IP.String()
 	serfConfig.MemberlistConfig.BindPort = addr.Port
 	// EventChはノードがクラスタに参加・離脱した時に、Serfのイベントを受信する手段
-	m.events = make(chan serf.Event, 1024)
+	m.events = make(chan serf.Event)
 	serfConfig.EventCh = m.events
-	serfConfig.Tags = m.Config.Tags         // クラスタ内の他のノードと共有し、このノードの処理方法をクラスタに知らせる簡単なデータのためにタグを使う必要がある
+	serfConfig.Tags = m.Tags                // クラスタ内の他のノードと共有し、このノードの処理方法をクラスタに知らせる簡単なデータのためにタグを使う必要がある
 	serfConfig.NodeName = m.Config.NodeName // Serfクラスタ全体でノードの一意な識別子として機能
 	m.serf, err = serf.Create(serfConfig)
 	if err != nil {
@@ -59,7 +59,7 @@ func (m *Membership) Setup() error {
 	// 既存クラスタがあり、そのクラスタに追加したい新たなノードを作成したら、既存のクラスタないの少なくとも1つのノードに向ける必要がある。
 	// 1つに接続したら、残りのノードについて知ることになる。
 	if m.StartJoinAddrs != nil {
-		_, err := m.serf.Join(m.StartJoinAddrs, true)
+		_, err = m.serf.Join(m.StartJoinAddrs, true)
 		if err != nil {
 			return err
 		}
@@ -89,7 +89,7 @@ func (m *Membership) eventHandler() {
 		case serf.EventMemberLeave, serf.EventMemberFailed:
 			for _, member := range event.(serf.MemberEvent).Members {
 				if m.isLocal(member) {
-					continue
+					return
 				}
 
 				m.handleLeave(member)
@@ -99,7 +99,7 @@ func (m *Membership) eventHandler() {
 }
 
 func (m *Membership) handleJoin(member serf.Member) {
-	if err := m.handler.Join(member.Name, member.Addr.String()); err != nil {
+	if err := m.handler.Join(member.Name, member.Tags["rpc_addr"]); err != nil {
 		m.logError(err, "failed to join", member)
 	}
 }
