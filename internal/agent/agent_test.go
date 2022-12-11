@@ -55,7 +55,7 @@ func TestAgent(t *testing.T) {
 			DataDir:         dataDir,
 			BindAddr:        bindAddr,
 			RPCPort:         rpcPort,
-			NodeName:        fmt.Sprintf("%d", 1),
+			NodeName:        fmt.Sprintf("%d", i),
 			StartJoinAddrs:  startJoinAddrs,
 			ACLModelFile:    config.ACLModelFile,
 			ACLPolicyFile:   config.ACLPolicyFile,
