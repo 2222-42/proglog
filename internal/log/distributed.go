@@ -67,7 +67,7 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
 		return err
 	}
 
-	// 安定ストアはkey-value store
+	// 安定ストアはkey-value store。クラスタの構成を保存する。
 	stableStore, err := raftboltdb.NewBoltStore( // BoltはGo用の組み込み型永続key-value store
 		filepath.Join(dataDir, "raft", "stable"),
 	)
@@ -75,7 +75,7 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
 		return err
 	}
 
-	// スナップショットストアで、効率的かつリーダーへの負担も少なく
+	// スナップショットストアにより、復旧の際に、効率的かつリーダーへの負担も少なく済む。
 	retain := 1
 	snapshotStore, err := raft.NewFileSnapshotStore(
 		filepath.Join(dataDir, "raft"),
@@ -145,7 +145,7 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
 	return err
 }
 
-// Append はサーバーのログに直接レコードを追加するのではなく、レコードをログに追加するようにFSMに支持するコマンドを適用するようにRaftに支持する
+// Append はサーバーのログに直接レコードを追加するのではなく、レコードをログに追加するようにFSMに指示するコマンドを適用するようにRaftに指示する
 func (l *DistributedLog) Append(record *api.Record) (uint64, error) {
 	res, err := l.apply(
 		AppendRequestType,
