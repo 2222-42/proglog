@@ -1,8 +1,11 @@
 package log
 
 import (
+	"bytes"
+	api "github.com/2222-42/proglog/api/v1"
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
+	"google.golang.org/protobuf/proto"
 	"io"
 	"net"
 	"os"
@@ -142,6 +145,52 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
 	return err
 }
 
+// Append はサーバーのログに直接レコードを追加するのではなく、レコードをログに追加するようにFSMに支持するコマンドを適用するようにRaftに支持する
+func (l *DistributedLog) Append(record *api.Record) (uint64, error) {
+	res, err := l.apply(
+		AppendRequestType,
+		&api.ProduceRequest{Record: record},
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	return res.(*api.ProduceResponse).Offset, nil
+}
+
+// apply はRaftのAPIを内容しており、リクエストを適用し、そのレスポンスを返す。
+func (l *DistributedLog) apply(reqType RequestType, req proto.Message) (interface{}, error) {
+	var buf bytes.Buffer
+	_, err := buf.Write([]byte{byte(reqType)})
+	if err != nil {
+		return nil, err
+	}
+	b, err := proto.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	_, err = buf.Write(b)
+	if err != nil {
+		return nil, err
+	}
+	timeout := 10 * time.Second
+	future := l.raft.Apply(buf.Bytes(), timeout)
+	if future.Error() != nil { // Raftのレプリケーションに何か問題が発生した場合。サービスのエラーは返さない。FSMのApplyメソッドが返したものを返す。
+		return nil, future.Error()
+	}
+	res := future.Response()
+	if err, ok := res.(error); ok { // Goの慣習と異なり、単一の値を返すので、型アサーションで検査する。
+		return nil, err
+	}
+
+	return res, nil
+}
+
+func (l *DistributedLog) Read(offset uint64) (*api.Record, error) {
+	// 緩やかな一貫性で、サーバのログから読み出す。強い一貫性が必要なら、Raftを経由する。
+	return l.log.Read(offset)
+}
+
 var _ raft.FSM = (*fsm)(nil)
 
 type fsm struct {
@@ -162,6 +211,10 @@ func (f fsm) Restore(snapshot io.ReadCloser) error {
 	//TODO implement me
 	panic("implement me")
 }
+
+type RequestType uint8
+
+const AppendRequestType RequestType = 0
 
 type logStore struct {
 	*Log
