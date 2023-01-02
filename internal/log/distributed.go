@@ -197,62 +197,149 @@ type fsm struct {
 	log *Log
 }
 
-func (f fsm) Apply(log *raft.Log) interface{} {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (f fsm) Snapshot() (raft.FSMSnapshot, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (f fsm) Restore(snapshot io.ReadCloser) error {
-	//TODO implement me
-	panic("implement me")
-}
-
 type RequestType uint8
 
 const AppendRequestType RequestType = 0
+
+func (f fsm) Apply(record *raft.Log) interface{} {
+	buf := record.Data
+	reqType := AppendRequestType
+	switch reqType {
+	case AppendRequestType:
+		return f.applyAppend(buf[1:])
+	}
+	return nil
+}
+
+func (f fsm) applyAppend(b []byte) interface{} {
+	var req api.ProduceRequest
+	err := proto.Unmarshal(b, &req)
+	if err != nil {
+		return err
+	}
+
+	offset, err := f.log.Append(req.Record)
+	if err != nil {
+		return err
+	}
+
+	return &api.ProduceResponse{Offset: offset}
+}
+
+func (f fsm) Snapshot() (raft.FSMSnapshot, error) {
+	r := f.log.Reader()
+	return &snapshot{reader: r}, nil
+}
+
+var _ raft.FSMSnapshot = (*snapshot)(nil)
+
+type snapshot struct {
+	reader io.Reader
+}
+
+func (s snapshot) Persist(sink raft.SnapshotSink) error {
+	if _, err := io.Copy(sink, s.reader); err != nil {
+		_ = sink.Cancel()
+		return err
+	}
+
+	return sink.Close()
+}
+
+func (s snapshot) Release() {}
+
+func (f fsm) Restore(r io.ReadCloser) error {
+	b := make([]byte, lenWidth)
+	var buf bytes.Buffer
+	for i := 0; ; i++ {
+		_, err := io.ReadFull(r, b)
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return err
+		}
+
+		size := int64(enc.Uint64(b))
+		if _, err = io.CopyN(&buf, r, size); err != nil {
+			return err
+		}
+
+		record := &api.Record{}
+		if err = proto.Unmarshal(buf.Bytes(), record); err != nil {
+			return err
+		}
+
+		if i == 0 {
+			// 初期オフセットをスナップショットから読み取った最初のレコードのオフセットに設定し、ログのオフセットが一致するようにする
+			f.log.Config.Segment.InitialOffset = record.Offset
+			// ログをリセットする。
+			if err := f.log.Reset(); err != nil {
+				return err
+			}
+		}
+
+		// スナップショットのレコードを読みこんで、新たなログを追加
+		if _, err = f.log.Append(record); err != nil {
+			return err
+		}
+		buf.Reset()
+	}
+	return nil
+}
+
+var _ raft.LogStore = (*logStore)(nil)
 
 type logStore struct {
 	*Log
 }
 
 func (l logStore) FirstIndex() (uint64, error) {
-	//TODO implement me
-	panic("implement me")
+	return l.LowestOffset()
 }
 
 func (l logStore) LastIndex() (uint64, error) {
-	//TODO implement me
-	panic("implement me")
+	return l.HighestOffset()
 }
 
 func (l logStore) GetLog(index uint64, log *raft.Log) error {
-	//TODO implement me
-	panic("implement me")
+	in, err := l.Read(index)
+	if err != nil {
+		return err
+	}
+	log.Data = in.Value
+	log.Index = in.Offset
+	log.Type = raft.LogType(in.Type)
+	log.Term = in.Term
+	return nil
 }
 
 func (l logStore) StoreLog(log *raft.Log) error {
-	//TODO implement me
-	panic("implement me")
+	return l.StoreLogs([]*raft.Log{log})
 }
 
 func (l logStore) StoreLogs(logs []*raft.Log) error {
-	//TODO implement me
-	panic("implement me")
+	for _, log := range logs {
+		if _, err := l.Append(&api.Record{
+			Value: log.Data,
+			Term:  log.Term,
+			Type:  uint32(log.Type),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (l logStore) DeleteRange(min, max uint64) error {
-	//TODO implement me
-	panic("implement me")
+	return l.Truncate(max)
 }
 
 func newLogStore(dir string, c Config) (*logStore, error) {
-	//TODO implement me
-	panic("implement me")
+	log, err := NewLog(dir, c)
+	if err != nil {
+		return nil, err
+	}
+	return &logStore{log}, nil
 }
 
 type StreamLayer struct{}
