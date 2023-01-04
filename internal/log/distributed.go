@@ -2,6 +2,8 @@ package log
 
 import (
 	"bytes"
+	"crypto/tls"
+	"fmt"
 	api "github.com/2222-42/proglog/api/v1"
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
@@ -342,24 +344,71 @@ func newLogStore(dir string, c Config) (*logStore, error) {
 	return &logStore{log}, nil
 }
 
-type StreamLayer struct{}
+var _ raft.StreamLayer = (*StreamLayer)(nil)
+
+type StreamLayer struct {
+	ln              net.Listener
+	serverTLSConfig *tls.Config
+	peerTLSConfig   *tls.Config
+}
+
+func NewStreamLayer(ln net.Listener,
+	serverTLSConfig *tls.Config,
+	peerTLSConfig *tls.Config) *StreamLayer {
+	return &StreamLayer{
+		ln:              ln,
+		serverTLSConfig: serverTLSConfig,
+		peerTLSConfig:   peerTLSConfig,
+	}
+}
 
 func (s StreamLayer) Accept() (net.Conn, error) {
-	//TODO implement me
-	panic("implement me")
+	conn, err := s.ln.Accept()
+	if err != nil {
+		return nil, err
+	}
+	b := make([]byte, 1)
+	_, err = conn.Read(b)
+	if err != nil {
+		return nil, err
+	}
+
+	if !bytes.Equal([]byte{byte(RaftRPC)}, b) {
+		return nil, fmt.Errorf("not a raft rpc")
+	}
+
+	if s.serverTLSConfig != nil {
+		return tls.Server(conn, s.serverTLSConfig), nil
+	}
+
+	return conn, err
 }
 
 func (s StreamLayer) Close() error {
-	//TODO implement me
-	panic("implement me")
+	return s.ln.Close()
 }
 
 func (s StreamLayer) Addr() net.Addr {
-	//TODO implement me
-	panic("implement me")
+	return s.ln.Addr()
 }
 
+const RaftRPC = 1
+
+// Dial はRaftクラスタ内の他のサーバに出ていくコネクションを作るもの
 func (s StreamLayer) Dial(address raft.ServerAddress, timeout time.Duration) (net.Conn, error) {
-	//TODO implement me
-	panic("implement me")
+	dialer := &net.Dialer{Timeout: timeout}
+	var conn, err = dialer.Dial("tcp", string(address))
+	if err != nil {
+		return nil, err
+	}
+
+	// Raft RPCであることを特定する
+	_, err = conn.Write([]byte(byte(RaftRPC)))
+	if err != nil {
+		return nil, err
+	}
+	if s.peerTLSConfig != nil {
+		conn = tls.Client(conn, s.peerTLSConfig)
+	}
+	return conn, err
 }
