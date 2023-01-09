@@ -459,7 +459,7 @@ func (s StreamLayer) Dial(address raft.ServerAddress, timeout time.Duration) (ne
 	}
 
 	// Raft RPCであることを特定する
-	_, err = conn.Write([]byte(byte(RaftRPC)))
+	_, err = conn.Write([]byte{byte(RaftRPC)})
 	if err != nil {
 		return nil, err
 	}
