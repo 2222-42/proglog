@@ -22,6 +22,7 @@ import (
 type Config struct {
 	CommitLog  CommitLog
 	Authorizer Authorizer
+	GetServer  GetServer
 }
 
 type Authorizer interface {
@@ -121,6 +122,18 @@ func (s *grpcServer) ProduceStream(stream api.Log_ProduceStreamServer) error {
 			return err
 		}
 	}
+}
+
+func (s *grpcServer) GetServers(ctx context.Context, req *api.GetServersRequest) (*api.GetServersResponse, error) {
+	servers, err := s.GetServer.GetServers()
+	if err != nil {
+		return nil, err
+	}
+	return &api.GetServersResponse{Servers: servers}, nil
+}
+
+type GetServer interface {
+	GetServers() ([]*api.Server, error)
 }
 
 // NewGRPCServer の第二引数は、gRPCのサーバーオプション
