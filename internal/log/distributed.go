@@ -259,7 +259,7 @@ func (l *DistributedLog) GetServers() ([]*api.Server, error) {
 	for _, server := range future.Configuration().Servers {
 		servers = append(servers, &api.Server{
 			Id:       string(server.ID),
-			Address:  string(server.Address),
+			RpcAddr:  string(server.Address),
 			IsLeader: l.raft.Leader() == server.Address,
 		})
 	}
