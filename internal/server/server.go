@@ -20,9 +20,9 @@ import (
 )
 
 type Config struct {
-	CommitLog  CommitLog
-	Authorizer Authorizer
-	GetServer  GetServer
+	CommitLog   CommitLog
+	Authorizer  Authorizer
+	GetServerer GetServer
 }
 
 type Authorizer interface {
@@ -125,7 +125,7 @@ func (s *grpcServer) ProduceStream(stream api.Log_ProduceStreamServer) error {
 }
 
 func (s *grpcServer) GetServers(ctx context.Context, req *api.GetServersRequest) (*api.GetServersResponse, error) {
-	servers, err := s.GetServer.GetServers()
+	servers, err := s.GetServerer.GetServers()
 	if err != nil {
 		return nil, err
 	}
