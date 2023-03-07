@@ -1,4 +1,4 @@
-package proglog
+package main
 
 import (
 	"github.com/2222-42/proglog/internal/agent"
