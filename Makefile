@@ -55,4 +55,4 @@ test: $(CONFIG_PATH)/policy.csv $(CONFIG_PATH)/model.conf
 TAG ?= 0.0.1
 
 build-docker:
-	docker build -t github.com/2222-42/proglog:$(TAG) .
+	docker build --platform linux/amd64 -t github.com/2222-42/proglog:$(TAG) .
