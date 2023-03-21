@@ -22,3 +22,8 @@ helm install proglog deploy/proglog
 ```
 kubectl relay host/proglog-0.proglog.default.svc.cluster.local 8400
 ```
+
+
+## acknowledgements
+
+`deploy/metacontroller/templates/metacontroller.yaml` のコードに関しては、metacontroller/metacontrolelrの [`metacontroller-crds-v1.yaml`](https://github.com/metacontroller/metacontroller/blob/master/manifests/production/metacontroller-crds-v1.yaml)を用いています。
